@@ -1,5 +1,5 @@
 module "acm_certificate" {
-  source  = "operatehappy/acm-certificate/aws"
+  source  = "jeffabailey/acm-certificate/aws"
   version = "1.2.0"
 
   domain_name            = var.domain_name
@@ -12,7 +12,7 @@ module "acm_certificate" {
 }
 
 module "s3_bucket" {
-  source  = "operatehappy/s3-bucket/aws"
+  source  = "jeffabailey/s3-bucket/aws"
   version = "1.2.0"
 
   name             = var.s3_bucket_name
@@ -23,6 +23,10 @@ module "s3_bucket" {
   tags             = local.s3_merged_tags
   force_destroy    = var.s3_force_destroy
   create_readme    = var.s3_create_readme
+  website {
+    index_document = "index.html"
+    error_document = "error.html"
+  }
 }
 
 resource "aws_cloudfront_origin_access_identity" "this" {
