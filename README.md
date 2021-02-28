@@ -17,7 +17,7 @@
 
 ## Overview
 
-![Terraform Module: AWS CloudFront Websites](https://raw.githubusercontent.com/operatehappy/terraform-aws-cloudfront-website/master/overview.png "Terraform Module: AWS CloudFront Websites")
+![Terraform Module: AWS CloudFront Websites](https://raw.githubusercontent.com/jeffabailey/terraform-aws-cloudfront-website/master/overview.png "Terraform Module: AWS CloudFront Websites")
 
 ## Requirements
 
@@ -39,7 +39,7 @@ module "cloudfront_website" {
     aws.global = aws
   }
 
-  source  = "operatehappy/cloudfront-website/aws"
+  source  = "jeffabailey/cloudfront-website/aws"
   version = "0.6.0"
 
   domain_name = "example.com"
@@ -67,7 +67,7 @@ module "cloudfront_website" {
 }
 ```
 
-Then, fetch the module from the [Terraform Registry](https://registry.terraform.io/modules/operatehappy/cloudfront-website) using `terraform get`.
+Then, fetch the module from the [Terraform Registry](https://registry.terraform.io/modules/jeffabailey/cloudfront-website) using `terraform get`.
 
 ### Inputs
 
@@ -128,9 +128,9 @@ Then, fetch the module from the [Terraform Registry](https://registry.terraform.
 
 ## Author Information
 
-This module is maintained by the contributors listed on [GitHub](https://github.com/operatehappy/terraform-aws-cloudfront-website/graphs/contributors).
+This module is maintained by the contributors listed on [GitHub](https://github.com/jeffabailey/terraform-aws-cloudfront-website/graphs/contributors).
 
-Development of this module was sponsored by [Operate Happy](https://github.com/operatehappy).
+Development of this module was sponsored by [Operate Happy](https://github.com/jeffabailey).
 
 ## License
 
