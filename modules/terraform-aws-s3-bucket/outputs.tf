@@ -48,11 +48,11 @@ output "region" {
 
 output "website_endpoint" {
   description = "The website endpoint"
-  value       = aws_s3_bucket_website_configuration.bucket[0].website_endpoint
+  value       = aws_s3_bucket_website_configuration.bucket.website_endpoint
 }
 
 output "website_domain" {
-  value       = aws_s3_bucket_website_configuration.bucket[0].website_domain
+  value       = aws_s3_bucket_website_configuration.bucket.website_domain
   description = "Domain of the Website Endpoint of the Bucket"
   depends_on = [
     aws_s3_bucket_website_configuration.bucket

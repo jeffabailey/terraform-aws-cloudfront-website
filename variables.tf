@@ -50,6 +50,12 @@ variable "s3_create_readme" {
   default     = false
 }
 
+variable "s3_website" {
+  type        = map(string)
+  description = "Map of Website configuration of S3 Bucket"
+  default     = {}
+}
+
 variable "acm_use_default_tags" {
   type        = bool
   description = "Toggle to enable creation of default tags for ACM Certificate, containing Terraform Workspace identifier"

@@ -33,24 +33,7 @@ module "s3_bucket" {
   tags             = local.s3_merged_tags
   force_destroy    = var.s3_force_destroy
   create_readme    = var.s3_create_readme
-
-  website = {
-    index_document = "index.html"
-    error_document = "error.html"
-  }
-}
-
-# Add explicit website configuration
-resource "aws_s3_bucket_website_configuration" "this" {
-  bucket = module.s3_bucket.id
-
-  index_document {
-    suffix = "index.html"
-  }
-
-  error_document {
-    key = "error.html"
-  }
+  website          = var.s3_website
 }
 
 # Add bucket public access block to ensure website access

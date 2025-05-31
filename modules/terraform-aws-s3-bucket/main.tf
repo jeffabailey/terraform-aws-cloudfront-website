@@ -25,7 +25,6 @@ resource "aws_s3_bucket_policy" "bucket" {
 }
 
 resource "aws_s3_bucket_website_configuration" "bucket" {
-  count  = length(var.website) != 0 ? 1 : 0
   bucket = aws_s3_bucket.bucket.id
 
   index_document {
