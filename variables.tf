@@ -146,6 +146,12 @@ variable "cloudfront_ssl_support_method" {
   default     = "sni-only"
 }
 
+variable "atproto_did" {
+  type        = string
+  description = "The DID value to return for /.well-known/atproto-did requests"
+  default     = null
+}
+
 locals {
   default_tags = {
     TerraformManaged   = true

@@ -1,25 +1,63 @@
 resource "aws_s3_bucket" "bucket" {
   bucket        = local.name
   bucket_prefix = local.bucket_prefix
-  acl           = var.acl
-  policy        = var.policy != null ? var.policy : null
-  tags          = local.merged_tags
   force_destroy = var.force_destroy
+  tags          = local.merged_tags
+}
 
-  dynamic "website" {
-    for_each = length(var.website) != 0 ? [var.website] : []
+resource "aws_s3_bucket_ownership_controls" "bucket" {
+  bucket = aws_s3_bucket.bucket.id
+  rule {
+    object_ownership = "BucketOwnerPreferred"
+  }
+}
 
-    content {
-      index_document           = lookup(website.value, "index_document", null)
-      error_document           = lookup(website.value, "error_document", null)
-      routing_rules            = lookup(website.value, "routing_rules", null)
-      redirect_all_requests_to = lookup(website.value, "redirect_all_requests_to", null)
-    }
+resource "aws_s3_bucket_acl" "bucket" {
+  depends_on = [aws_s3_bucket_ownership_controls.bucket]
+  bucket     = aws_s3_bucket.bucket.id
+  acl        = var.acl
+}
+
+resource "aws_s3_bucket_policy" "bucket" {
+  count  = var.policy != null ? 1 : 0
+  bucket = aws_s3_bucket.bucket.id
+  policy = var.policy
+}
+
+resource "aws_s3_bucket_website_configuration" "bucket" {
+  count  = length(var.website) != 0 ? 1 : 0
+  bucket = aws_s3_bucket.bucket.id
+
+  index_document {
+    suffix = lookup(var.website, "index_document", "index.html")
   }
 
-  dynamic "cors_rule" {
-    for_each = length(var.cors_rule) != 0 ? [var.cors_rule] : []
+  error_document {
+    key = lookup(var.website, "error_document", "error.html")
+  }
 
+  dynamic "routing_rule" {
+    for_each = try(var.website.routing_rules, [])
+    content {
+      condition {
+        key_prefix_equals = routing_rule.value.condition.key_prefix_equals
+      }
+      redirect {
+        host_name               = routing_rule.value.redirect.host_name
+        http_redirect_code      = routing_rule.value.redirect.http_redirect_code
+        protocol                = routing_rule.value.redirect.protocol
+        replace_key_prefix_with = routing_rule.value.redirect.replace_key_prefix_with
+      }
+    }
+  }
+}
+
+resource "aws_s3_bucket_cors_configuration" "bucket" {
+  count  = length(var.cors_rule) != 0 ? 1 : 0
+  bucket = aws_s3_bucket.bucket.id
+
+  dynamic "cors_rule" {
+    for_each = [var.cors_rule]
     content {
       allowed_headers = lookup(cors_rule.value, "allowed_headers", null)
       allowed_methods = lookup(cors_rule.value, "allowed_methods", null)
@@ -28,39 +66,45 @@ resource "aws_s3_bucket" "bucket" {
       max_age_seconds = lookup(cors_rule.value, "max_age_seconds", null)
     }
   }
+}
 
-  dynamic "versioning" {
-    for_each = length(var.versioning) != 0 ? [var.versioning] : []
+resource "aws_s3_bucket_versioning" "bucket" {
+  count  = length(var.versioning) != 0 ? 1 : 0
+  bucket = aws_s3_bucket.bucket.id
 
-    content {
-      enabled    = lookup(versioning.value, "enabled", null)
-      mfa_delete = lookup(versioning.value, "mfa_delete", null)
-    }
+  versioning_configuration {
+    status = lookup(var.versioning, "enabled", true) ? "Enabled" : "Disabled"
+    mfa_delete = lookup(var.versioning, "mfa_delete", null)
   }
+}
 
-  dynamic "logging" {
-    for_each = length(var.logging) != 0 ? [var.logging] : []
+resource "aws_s3_bucket_logging" "bucket" {
+  count  = length(var.logging) != 0 ? 1 : 0
+  bucket = aws_s3_bucket.bucket.id
 
-    content {
-      target_bucket = lookup(logging.value, "target_bucket", null)
-      target_prefix = lookup(logging.value, "target_prefix", null)
-    }
-  }
+  target_bucket = lookup(var.logging, "target_bucket", null)
+  target_prefix = lookup(var.logging, "target_prefix", null)
+}
 
-  dynamic "lifecycle_rule" {
+resource "aws_s3_bucket_lifecycle_configuration" "bucket" {
+  count  = length(var.lifecycle_rule) != 0 ? 1 : 0
+  bucket = aws_s3_bucket.bucket.id
+
+  dynamic "rule" {
     for_each = var.lifecycle_rule
-
     content {
-      id                                     = lookup(lifecycle_rule.value, "id", null)
-      prefix                                 = lookup(lifecycle_rule.value, "prefix", null)
-      tags                                   = lookup(lifecycle_rule.value, "tags", null)
-      enabled                                = lookup(lifecycle_rule.value, "enabled", false)
-      abort_incomplete_multipart_upload_days = lookup(lifecycle_rule.value, "abort_incomplete_multipart_upload_days", null)
+      id     = lookup(rule.value, "id", null)
+      status = lookup(rule.value, "enabled", false) ? "Enabled" : "Disabled"
+
+      dynamic "filter" {
+        for_each = lookup(rule.value, "prefix", null) != null ? [1] : []
+        content {
+          prefix = rule.value.prefix
+        }
+      }
 
       dynamic "expiration" {
-        // TODO: simplify this:
-        for_each = length(keys(lookup(lifecycle_rule.value, "expiration", {}))) == 0 ? [] : [lookup(lifecycle_rule.value, "expiration", {})]
-
+        for_each = length(keys(lookup(rule.value, "expiration", {}))) == 0 ? [] : [lookup(rule.value, "expiration", {})]
         content {
           date                         = lookup(expiration.value, "date", null)
           days                         = lookup(expiration.value, "days", null)
@@ -69,9 +113,7 @@ resource "aws_s3_bucket" "bucket" {
       }
 
       dynamic "transition" {
-        // TODO: simplify this:
-        for_each = length(keys(lookup(lifecycle_rule.value, "transition", {}))) == 0 ? [] : [lookup(lifecycle_rule.value, "transition", {})]
-
+        for_each = length(keys(lookup(rule.value, "transition", {}))) == 0 ? [] : [lookup(rule.value, "transition", {})]
         content {
           date          = lookup(transition.value, "date", null)
           days          = lookup(transition.value, "days", null)
@@ -80,61 +122,61 @@ resource "aws_s3_bucket" "bucket" {
       }
 
       dynamic "noncurrent_version_expiration" {
-        // TODO: simplify this:
-        for_each = length(keys(lookup(lifecycle_rule.value, "noncurrent_version_expiration", {}))) == 0 ? [] : [lookup(lifecycle_rule.value, "noncurrent_version_expiration", {})]
-
+        for_each = length(keys(lookup(rule.value, "noncurrent_version_expiration", {}))) == 0 ? [] : [lookup(rule.value, "noncurrent_version_expiration", {})]
         content {
-          days = lookup(noncurrent_version_expiration.value, "days", null)
+          noncurrent_days = lookup(noncurrent_version_expiration.value, "days", null)
         }
       }
 
       dynamic "noncurrent_version_transition" {
-        // TODO: simplify this:
-        for_each = length(keys(lookup(lifecycle_rule.value, "noncurrent_version_transition", {}))) == 0 ? [] : [lookup(lifecycle_rule.value, "noncurrent_version_transition", {})]
-
+        for_each = length(keys(lookup(rule.value, "noncurrent_version_transition", {}))) == 0 ? [] : [lookup(rule.value, "noncurrent_version_transition", {})]
         content {
-          days          = lookup(lifecycle_rule.value.noncurrent_version_transition, "days", null)
-          storage_class = lookup(lifecycle_rule.value.noncurrent_version_transition, "storage_class", null)
+          noncurrent_days = lookup(noncurrent_version_transition.value, "days", null)
+          storage_class   = lookup(noncurrent_version_transition.value, "storage_class", null)
         }
       }
     }
   }
+}
 
-  acceleration_status = var.acceleration_status
+resource "aws_s3_bucket_accelerate_configuration" "bucket" {
+  count  = var.acceleration_status != null ? 1 : 0
+  bucket = aws_s3_bucket.bucket.id
+  status = var.acceleration_status
+}
 
-  request_payer = var.request_payer
+resource "aws_s3_bucket_request_payment_configuration" "bucket" {
+  count  = var.request_payer != null ? 1 : 0
+  bucket = aws_s3_bucket.bucket.id
+  payer  = var.request_payer
+}
 
-  // replication_configuration will be added in a future release
+resource "aws_s3_bucket_server_side_encryption_configuration" "bucket" {
+  count  = length(var.server_side_encryption_configuration) != 0 ? 1 : 0
+  bucket = aws_s3_bucket.bucket.id
 
-  dynamic "server_side_encryption_configuration" {
-    for_each = length(var.server_side_encryption_configuration) != 0 ? [var.server_side_encryption_configuration] : []
-
+  dynamic "rule" {
+    for_each = [var.server_side_encryption_configuration]
     content {
-      rule {
-        apply_server_side_encryption_by_default {
-          kms_master_key_id = lookup(server_side_encryption_configuration.value, "kms_master_key_id", null)
-          sse_algorithm     = lookup(server_side_encryption_configuration.value, "sse_algorithm", null)
-        }
+      apply_server_side_encryption_by_default {
+        kms_master_key_id = lookup(rule.value, "kms_master_key_id", null)
+        sse_algorithm     = lookup(rule.value, "sse_algorithm", null)
       }
     }
   }
+}
 
-  dynamic "object_lock_configuration" {
-    for_each = length(var.object_lock_configuration) != 0 ? [var.object_lock_configuration] : []
+resource "aws_s3_bucket_object_lock_configuration" "bucket" {
+  count  = length(var.object_lock_configuration) != 0 ? 1 : 0
+  bucket = aws_s3_bucket.bucket.id
 
+  dynamic "rule" {
+    for_each = [var.object_lock_configuration]
     content {
-      object_lock_enabled = lookup(object_lock_configuration.value, "object_lock_enabled", null)
-
-      dynamic "rule" {
-        for_each = length(var.object_lock_configuration.rule) != 0 ? [var.object_lock_configuration.rule] : []
-
-        content {
-          default_retention {
-            mode  = lookup(rule.value.default_retention, "mode", null)
-            days  = lookup(rule.value.default_retention, "days", null)
-            years = lookup(rule.value.default_retention, "years", null)
-          }
-        }
+      default_retention {
+        mode  = lookup(rule.value.default_retention, "mode", null)
+        days  = lookup(rule.value.default_retention, "days", null)
+        years = lookup(rule.value.default_retention, "years", null)
       }
     }
   }

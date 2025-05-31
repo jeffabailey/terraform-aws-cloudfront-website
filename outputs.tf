@@ -28,31 +28,6 @@ output "certificate_domain_name" {
   description = "Domain name(s) of the ACM Certificate"
 }
 
-output "origin_access_identity_id" {
-  value       = aws_cloudfront_origin_access_identity.this.id
-  description = "Identifier of the CloudFront Distribution"
-}
-
-output "origin_access_identity_path" {
-  value       = aws_cloudfront_origin_access_identity.this.cloudfront_access_identity_path
-  description = "Full path of the Origin Access Identity"
-}
-
-output "origin_access_identity_etag" {
-  value       = aws_cloudfront_origin_access_identity.this.etag
-  description = "Identifier of current version of the Origin Access Identity"
-}
-
-output "origin_access_identity_iam_arn" {
-  value       = aws_cloudfront_origin_access_identity.this.iam_arn
-  description = "ARN of the Origin Access Identity"
-}
-
-output "origin_access_identity_s3_canonical_user_id" {
-  value       = aws_cloudfront_origin_access_identity.this.s3_canonical_user_id
-  description = "Canonical S3 User ID of the Origin Access Identity"
-}
-
 # TODO: cloudfront outputs
 output "distribution_id" {
   value       = aws_cloudfront_distribution.this.id

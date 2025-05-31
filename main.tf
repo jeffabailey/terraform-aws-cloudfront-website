@@ -1,5 +1,5 @@
 module "acm_certificate" {
-  source  = "./modules/terraform-aws-acm-certificate"
+  source = "./modules/terraform-aws-acm-certificate"
   //version = "1.2.1"
 
   domain_name            = var.domain_name
@@ -12,12 +12,22 @@ module "acm_certificate" {
 }
 
 module "s3_bucket" {
-  source  = "./modules/terraform-aws-s3-bucket"
+  source = "./modules/terraform-aws-s3-bucket"
   //version = "1.2.1"
 
   name             = var.s3_bucket_name
   use_prefix       = var.s3_use_prefix
-  policy           = var.s3_policy
+  policy           = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = "*"
+        Action = "s3:GetObject"
+        Resource = "${module.s3_bucket.arn}/*"
+      }
+    ]
+  })
   acl              = "private"
   use_default_tags = var.s3_use_default_tags
   tags             = local.s3_merged_tags
@@ -25,33 +35,77 @@ module "s3_bucket" {
   create_readme    = var.s3_create_readme
 
   website = {
-    index_document           = "index.html"
-    error_document           = "error.html"
+    index_document = "index.html"
+    error_document = "error.html"
   }
 }
 
-resource "aws_cloudfront_origin_access_identity" "this" {
-  comment = local.cloudfront_origin_access_identity_comment
-}
-
-data "aws_iam_policy_document" "this" {
-  statement {
-    effect    = "Allow"
-    actions   = ["s3:GetObject"]
-    resources = ["${module.s3_bucket.arn}/*"]
-
-    principals {
-      type        = "AWS"
-      identifiers = [aws_cloudfront_origin_access_identity.this.iam_arn]
-    }
-  }
-}
-
-# NOTE: Bucket Policies could also be set by passing the `policy` attribute to the `s3_bucket` Module.
-# NOTE: This might result in a race-condition as the Distribution is dependent on output from `s3_bucket`.
-resource "aws_s3_bucket_policy" "this" {
+# Add explicit website configuration
+resource "aws_s3_bucket_website_configuration" "this" {
   bucket = module.s3_bucket.id
-  policy = data.aws_iam_policy_document.this.json
+
+  index_document {
+    suffix = "index.html"
+  }
+
+  error_document {
+    key = "error.html"
+  }
+}
+
+# Add bucket public access block to ensure website access
+resource "aws_s3_bucket_public_access_block" "this" {
+  bucket = module.s3_bucket.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
+resource "aws_cloudfront_function" "redirect_function" {
+  name    = "redirect-function"
+  runtime = "cloudfront-js-1.0"
+  publish = true
+  code    = <<-EOT
+    function handler(event) {
+      var request = event.request;
+      var uri = request.uri;
+
+      if (uri.startsWith("/.well-known/host-meta")) {
+        return {
+          statusCode: 302,
+          statusDescription: "Found",
+          headers: {
+            "location": { value: "https://fed.brid.gy" + uri }
+          }
+        };
+      }
+
+      if (uri.startsWith("/.well-known/webfinger")) {
+        return {
+          statusCode: 302,
+          statusDescription: "Found",
+          headers: {
+            "location": { value: "https://fed.brid.gy" + uri }
+          }
+        };
+      }
+
+      if (uri === "/.well-known/atproto-did") {
+        return {
+          statusCode: 200,
+          statusDescription: "OK",
+          headers: {
+            "content-type": { value: "text/plain" }
+          },
+          body: "${var.atproto_did}"
+        };
+      }
+
+      return request;
+    }
+  EOT
 }
 
 resource "aws_cloudfront_distribution" "this" {
@@ -82,6 +136,11 @@ resource "aws_cloudfront_distribution" "this" {
     cached_methods   = ["GET", "HEAD"]
     compress         = true
 
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.redirect_function.arn
+    }
+
     forwarded_values {
       query_string = false
 
@@ -109,11 +168,19 @@ resource "aws_cloudfront_distribution" "this" {
   #  }
 
   origin {
-    domain_name = module.s3_bucket.bucket_regional_domain_name
+    domain_name = module.s3_bucket.website_endpoint
     origin_id   = local.s3_origin_id
-
-    s3_origin_config {
-      origin_access_identity = aws_cloudfront_origin_access_identity.this.cloudfront_access_identity_path
+    custom_origin_config {
+      http_port                = 80
+      https_port               = 443
+      origin_keepalive_timeout = 5
+      origin_protocol_policy   = "http-only"
+      origin_read_timeout      = 30
+      origin_ssl_protocols = [
+        "TLSv1",
+        "TLSv1.1",
+        "TLSv1.2",
+      ]
     }
   }
 
