@@ -32,7 +32,7 @@ resource "aws_s3_bucket_website_configuration" "bucket" {
   }
 
   error_document {
-    key = lookup(var.website, "error_document", "error.html")
+    key = lookup(var.website, "error_document", "404.html")
   }
 
   dynamic "routing_rule" {
