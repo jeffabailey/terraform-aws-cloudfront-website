@@ -74,7 +74,7 @@ resource "aws_cloudfront_function" "redirect_function" {
           }
         };
       }
-
+%{if var.atproto_did != null}
       if (uri === "/.well-known/atproto-did") {
         return {
           statusCode: 200,
@@ -85,11 +85,13 @@ resource "aws_cloudfront_function" "redirect_function" {
           body: "${var.atproto_did}"
         };
       }
-
+%{endif}
       return request;
     }
   EOT
 }
+
+
 
 resource "aws_cloudfront_distribution" "this" {
   aliases = length(local.concatenated_records) > 0 ? local.concatenated_records : [var.domain_name]
@@ -138,6 +140,8 @@ resource "aws_cloudfront_distribution" "this" {
     max_ttl                = 3600
   }
 
+
+
   default_root_object = var.cloudfront_default_root_object
 
   enabled         = var.cloudfront_enabled
@@ -166,6 +170,8 @@ resource "aws_cloudfront_distribution" "this" {
       ]
     }
   }
+
+
 
   # TODO: multiples allowed
   #  origin_group {
