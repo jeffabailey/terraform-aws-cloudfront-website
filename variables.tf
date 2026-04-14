@@ -158,6 +158,24 @@ variable "atproto_did" {
   default     = null
 }
 
+variable "bsky_oembed_enabled" {
+  type        = bool
+  description = "Enable Bluesky oEmbed proxy behavior on CloudFront"
+  default     = false
+}
+
+variable "bsky_oembed_origin_domain_name" {
+  type        = string
+  description = "Domain name of the Bluesky oEmbed origin"
+  default     = "embed.bsky.app"
+}
+
+variable "bsky_oembed_path_pattern" {
+  type        = string
+  description = "Path pattern used for Bluesky oEmbed requests"
+  default     = "/api/bsky-oembed*"
+}
+
 locals {
   default_tags = {
     TerraformManaged   = true
@@ -181,6 +199,7 @@ locals {
   s3_bucket_prefix = var.s3_use_prefix ? var.s3_bucket_name : null
 
   s3_origin_id = "S3-${var.s3_bucket_name}"
+  bsky_oembed_origin_id = "bsky_oembed_origin"
 
   cloudfront_origin_access_identity_comment = var.cloudfront_origin_access_identity_comment != "" ? var.cloudfront_origin_access_identity_comment : "Terraform-managed Origin Access Identity for ${var.domain_name}"
 }

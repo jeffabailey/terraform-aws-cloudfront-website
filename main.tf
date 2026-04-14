@@ -91,6 +91,26 @@ resource "aws_cloudfront_function" "redirect_function" {
   EOT
 }
 
+resource "aws_cloudfront_function" "bsky_oembed_function" {
+  count   = var.bsky_oembed_enabled ? 1 : 0
+  name    = "bsky-oembed-function"
+  runtime = "cloudfront-js-1.0"
+  publish = true
+  code    = <<-EOT
+    function handler(event) {
+      var request = event.request;
+      var uri = request.uri;
+
+      // Rewrite /api/bsky-oembed to /oembed for the Bluesky origin
+      if (uri.startsWith("/api/bsky-oembed")) {
+        request.uri = uri.replace("/api/bsky-oembed", "/oembed");
+      }
+
+      return request;
+    }
+  EOT
+}
+
 
 
 resource "aws_cloudfront_distribution" "this" {
@@ -140,6 +160,35 @@ resource "aws_cloudfront_distribution" "this" {
     max_ttl                = 3600
   }
 
+  dynamic "ordered_cache_behavior" {
+    for_each = var.bsky_oembed_enabled ? [1] : []
+
+    content {
+      path_pattern           = var.bsky_oembed_path_pattern
+      target_origin_id       = local.bsky_oembed_origin_id
+      viewer_protocol_policy = "redirect-to-https"
+      allowed_methods        = ["GET", "HEAD"]
+      cached_methods         = ["GET", "HEAD"]
+      compress               = false
+      min_ttl                = 0
+      default_ttl            = 300
+      max_ttl                = 3600
+
+      forwarded_values {
+        query_string = true
+
+        cookies {
+          forward = "none"
+        }
+      }
+
+      function_association {
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.bsky_oembed_function[0].arn
+      }
+    }
+  }
+
 
 
   default_root_object = var.cloudfront_default_root_object
@@ -168,6 +217,24 @@ resource "aws_cloudfront_distribution" "this" {
         "TLSv1.1",
         "TLSv1.2",
       ]
+    }
+  }
+
+  dynamic "origin" {
+    for_each = var.bsky_oembed_enabled ? [1] : []
+
+    content {
+      domain_name = var.bsky_oembed_origin_domain_name
+      origin_id   = local.bsky_oembed_origin_id
+
+      custom_origin_config {
+        http_port                = 80
+        https_port               = 443
+        origin_keepalive_timeout = 5
+        origin_protocol_policy   = "https-only"
+        origin_read_timeout      = 30
+        origin_ssl_protocols     = ["TLSv1.2"]
+      }
     }
   }
 
