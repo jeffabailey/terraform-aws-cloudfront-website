@@ -105,7 +105,7 @@ variable "cloudfront_comment" {
 
 # TODO: turn into variable
 variable "cloudfront_default_cache_behavior" {
-  type        = map
+  type        = map(any)
   description = "Default cache behavior for CloudFront Distribution"
   default     = {}
 }
@@ -176,6 +176,29 @@ variable "bsky_oembed_path_pattern" {
   default     = "/api/bsky-oembed*"
 }
 
+# -----------------------------------------------------------------------------
+# Response-headers policy (ADR-MCEJU-003)
+#
+# Two opt-in variables. Both default to null so existing callers see no
+# behavioral change. Set exactly one — they are mutually exclusive; setting
+# both fails the plan via the validation block on `terraform_data.validate_
+# security_headers_exclusive` in main.tf.
+# -----------------------------------------------------------------------------
+
+variable "security_headers" {
+  type = object({
+    content_security_policy = optional(string)
+  })
+  description = "Optional structured security headers. When set, the module creates an aws_cloudfront_response_headers_policy from these fields and attaches it to the distribution's default cache behavior. Mutually exclusive with response_headers_policy_id. Default null preserves existing distribution behavior."
+  default     = null
+}
+
+variable "response_headers_policy_id" {
+  type        = string
+  description = "Optional pre-built aws_cloudfront_response_headers_policy id. When set, the distribution attaches it directly without creating a module-owned policy. Escape hatch for callers maintaining their own policies (e.g., AWS managed policies, multi-distribution shared policies). Mutually exclusive with security_headers. Default null preserves existing distribution behavior."
+  default     = null
+}
+
 locals {
   default_tags = {
     TerraformManaged   = true
@@ -198,7 +221,7 @@ locals {
   # thereby allowing Terraform to set the `bucket_name`
   s3_bucket_prefix = var.s3_use_prefix ? var.s3_bucket_name : null
 
-  s3_origin_id = "S3-${var.s3_bucket_name}"
+  s3_origin_id          = "S3-${var.s3_bucket_name}"
   bsky_oembed_origin_id = "bsky_oembed_origin"
 
   cloudfront_origin_access_identity_comment = var.cloudfront_origin_access_identity_comment != "" ? var.cloudfront_origin_access_identity_comment : "Terraform-managed Origin Access Identity for ${var.domain_name}"

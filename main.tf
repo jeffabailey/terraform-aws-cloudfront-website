@@ -15,16 +15,16 @@ module "s3_bucket" {
   source = "./modules/terraform-aws-s3-bucket"
   //version = "1.2.1"
 
-  name             = var.s3_bucket_name
-  use_prefix       = var.s3_use_prefix
-  policy           = jsonencode({
+  name       = var.s3_bucket_name
+  use_prefix = var.s3_use_prefix
+  policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
+        Effect    = "Allow"
         Principal = "*"
-        Action = "s3:GetObject"
-        Resource = "${module.s3_bucket.arn}/*"
+        Action    = "s3:GetObject"
+        Resource  = "${module.s3_bucket.arn}/*"
       }
     ]
   })
@@ -113,6 +113,45 @@ resource "aws_cloudfront_function" "bsky_oembed_function" {
 
 
 
+# -----------------------------------------------------------------------------
+# Response-headers policy (ADR-MCEJU-003 / AC-3)
+#
+# Mutual-exclusion gate: setting BOTH var.security_headers and
+# var.response_headers_policy_id is forbidden. The precondition fails the
+# plan with both variable names in the error message so callers see the
+# ambiguity at the earliest possible point. (variable-level cross-variable
+# validation requires Terraform/OpenTofu 1.9+; terraform_data preconditions
+# work since Terraform 1.4 / OpenTofu day-1.)
+# -----------------------------------------------------------------------------
+
+resource "terraform_data" "validate_security_headers_exclusive" {
+  lifecycle {
+    precondition {
+      condition     = !(var.security_headers != null && var.response_headers_policy_id != null)
+      error_message = "var.security_headers and var.response_headers_policy_id are mutually exclusive — pass either a structured security_headers object OR a pre-built response_headers_policy_id, not both."
+    }
+  }
+}
+
+# Module-owned response-headers policy, created only when the structured
+# security_headers variable is set and the pass-through escape hatch is not.
+# When response_headers_policy_id is non-null, the caller's pre-built policy
+# takes precedence and this resource is skipped.
+
+resource "aws_cloudfront_response_headers_policy" "this" {
+  count = var.security_headers != null && var.response_headers_policy_id == null ? 1 : 0
+
+  name    = "${var.s3_bucket_name}-response-headers"
+  comment = "Module-managed response-headers policy for ${var.domain_name}. Generated from var.security_headers."
+
+  security_headers_config {
+    content_security_policy {
+      content_security_policy = var.security_headers.content_security_policy
+      override                = true
+    }
+  }
+}
+
 resource "aws_cloudfront_distribution" "this" {
   aliases = length(local.concatenated_records) > 0 ? local.concatenated_records : [var.domain_name]
   comment = var.cloudfront_comment
@@ -158,6 +197,21 @@ resource "aws_cloudfront_distribution" "this" {
     min_ttl                = 0
     default_ttl            = 300
     max_ttl                = 3600
+
+    # Resolved policy id (ADR-MCEJU-003):
+    #   - caller's pre-built policy (var.response_headers_policy_id) wins
+    #   - else module-owned policy generated from var.security_headers
+    #   - else null (existing distribution behavior, no policy attached)
+    # The mutual-exclusion precondition on terraform_data.validate_security_
+    # headers_exclusive guarantees the first two branches are not both active.
+    response_headers_policy_id = (
+      var.response_headers_policy_id != null
+      ? var.response_headers_policy_id
+      : (var.security_headers != null
+        ? aws_cloudfront_response_headers_policy.this[0].id
+        : null
+      )
+    )
   }
 
   dynamic "ordered_cache_behavior" {

@@ -98,6 +98,32 @@ Then, fetch the module from the [Terraform Registry](https://registry.terraform.
 | s3_tags | Mapping of Tags of S3 Bucket | `map(string)` | `{}` |
 | s3_use_default_tags | Toggle to enable creation of default tags for S3 Bucket, containing Terraform Workspace identifier | `bool` | `true` |
 | s3_use_prefix | Toggle to use randomly-generated Prefix for Bucket Name | `bool` | `false` |
+| security_headers | Optional structured security headers; module generates an `aws_cloudfront_response_headers_policy` from them and attaches to the distribution. Object fields: `content_security_policy` (string). Mutually exclusive with `response_headers_policy_id`. | `object` | `null` |
+| response_headers_policy_id | Optional pre-built `aws_cloudfront_response_headers_policy` id (e.g., AWS managed policy or a shared cross-distribution policy). Attached to the distribution directly. Mutually exclusive with `security_headers`. | `string` | `null` |
+
+#### Response-headers policy (ADR-MCEJU-003)
+
+Two opt-in variables let consumers attach an `aws_cloudfront_response_headers_policy` without writing the boilerplate themselves, while keeping an escape hatch for callers who already maintain their own policies.
+
+```hcl
+# Structured — module builds the policy
+module "cloudfront_website" {
+  source = "..."
+  # ...
+  security_headers = {
+    content_security_policy = "frame-src https://element.example.com"
+  }
+}
+
+# Pass-through — caller supplies a pre-built policy id
+module "cloudfront_website" {
+  source = "..."
+  # ...
+  response_headers_policy_id = aws_cloudfront_response_headers_policy.shared.id
+}
+```
+
+Setting both is a plan-time error: the precondition on `terraform_data.validate_security_headers_exclusive` names both variables in the message. Neither variable set preserves the module's pre-existing behavior (no response-headers policy attached).
 
 ### Outputs
 
