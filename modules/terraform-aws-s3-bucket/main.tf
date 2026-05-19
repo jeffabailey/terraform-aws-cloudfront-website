@@ -3,6 +3,18 @@ resource "aws_s3_bucket" "bucket" {
   bucket_prefix = local.bucket_prefix
   force_destroy = var.force_destroy
   tags          = local.merged_tags
+
+  # Website config is owned exclusively by aws_s3_bucket_website_configuration.bucket
+  # below. The AWS provider's legacy inline `website {}` block on aws_s3_bucket and
+  # the modern aws_s3_bucket_website_configuration resource both target the SAME
+  # underlying S3 API (PutBucketWebsite / DeleteBucketWebsite). When the inline
+  # block is removed or drifts to empty, the provider calls DeleteBucketWebsite —
+  # which clears the live config that aws_s3_bucket_website_configuration is
+  # supposed to own. Ignore drift on the legacy attribute to keep the modern
+  # resource authoritative.
+  lifecycle {
+    ignore_changes = [website]
+  }
 }
 
 resource "aws_s3_bucket_ownership_controls" "bucket" {
@@ -72,7 +84,7 @@ resource "aws_s3_bucket_versioning" "bucket" {
   bucket = aws_s3_bucket.bucket.id
 
   versioning_configuration {
-    status = lookup(var.versioning, "enabled", true) ? "Enabled" : "Disabled"
+    status     = lookup(var.versioning, "enabled", true) ? "Enabled" : "Disabled"
     mfa_delete = lookup(var.versioning, "mfa_delete", null)
   }
 }
