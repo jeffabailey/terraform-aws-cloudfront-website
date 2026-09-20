@@ -46,34 +46,140 @@ resource "aws_s3_bucket_public_access_block" "this" {
   restrict_public_buckets = false
 }
 
-resource "aws_cloudfront_function" "redirect_function" {
-  name    = "redirect-function"
-  runtime = "cloudfront-js-1.0"
-  publish = true
-  code    = <<-EOT
+# -----------------------------------------------------------------------------
+# Edge redirects: renderer, validator, and the function resource
+# (ADR-016 .. ADR-021; rule catalogue V-01..V-10 in the consumer docs and README)
+#
+# There is exactly ONE code string, `local.redirect_function_code`. The resource
+# uploads it and the budget output measures it, so the two can never disagree.
+# With `redirects = []` the render is byte-identical to the pre-0.7.0 code minus
+# the two removed Bridgy Fed blocks (golden test P-4), which keeps the plan of a
+# consumer that configures nothing to a single in-place update.
+# -----------------------------------------------------------------------------
+
+locals {
+  redirect_budget  = 10240 # CloudFront Functions maximum code size, in bytes
+  redirect_warn_at = 8192  # 80% of the budget: warn, but do not fail
+
+  # V-01 charset. ASCII only, so `length()` (characters) equals bytes.
+  redirect_path_re = "^/[A-Za-z0-9._~%/-]*$"
+
+  # Paths this module answers itself, and the prefixes a list entry may never
+  # claim. `/.well-known/` is reserved for identity and discovery whether or not
+  # the module answers a path under it today (ADR-020).
+  redirect_reserved_prefixes = ["/.well-known/", trimsuffix(var.bsky_oembed_path_pattern, "*")]
+  redirect_module_paths      = var.atproto_did == null ? [] : ["/.well-known/atproto-did"]
+
+  # N(p): drop a trailing "/index.html", else one trailing "/". Applied to the
+  # table keys here and to request.uri at the edge, so all three spellings of an
+  # old path reach the target in one hop.
+  redirect_entries = [
+    for e in var.redirects : {
+      from  = e.from
+      to    = e.to
+      nfrom = endswith(e.from, "/index.html") ? substr(e.from, 0, length(e.from) - 11) : (endswith(e.from, "/") ? substr(e.from, 0, length(e.from) - 1) : e.from)
+      nto   = endswith(e.to, "/index.html") ? substr(e.to, 0, length(e.to) - 11) : (endswith(e.to, "/") ? substr(e.to, 0, length(e.to) - 1) : e.to)
+    }
+  ]
+
+  # Grouping form (`=> ...`) instead of a plain map, so that a duplicate old path
+  # is reported by V-05 rather than blowing up as a raw "duplicate object key".
+  redirect_grouped = { for e in local.redirect_entries : e.nfrom => e.to... }
+  redirect_table   = { for k, v in local.redirect_grouped : k => v[0] }
+  redirect_keys    = keys(local.redirect_table)
+  redirect_hop     = { for k, v in { for e in local.redirect_entries : e.nfrom => e.nto... } : k => v[0] }
+
+  # -- V-01 .. V-07 offenders ------------------------------------------------
+  redirect_malformed = distinct(flatten([
+    for e in var.redirects : [
+      for p in [e.from, e.to] : p
+      if !can(regex(local.redirect_path_re, p)) || length(regexall("//", p)) > 0
+    ]
+  ]))
+
+  redirect_not_a_page = [
+    for e in var.redirects : e.to
+    if !endswith(e.to, "/") && !can(regex("^[^/]*[.][^/.]+$", element(split("/", e.to), length(split("/", e.to)) - 1)))
+  ]
+
+  redirect_root_old_path = [for e in var.redirects : e.from if e.from == "/"]
+
+  redirect_reserved = [
+    for e in var.redirects : e.from
+    if anytrue([for p in local.redirect_reserved_prefixes : startswith(e.from, p)]) || e.from == "/.well-known"
+  ]
+
+  redirect_duplicates = [
+    for k, v in local.redirect_grouped : format("%q sends to %s", k, join(" and ", formatlist("%q", v)))
+    if length(v) > 1
+  ]
+
+  redirect_self = [for e in local.redirect_entries : e.from if e.nfrom == e.nto]
+
+  # Chain and loop. HCL has no recursion, so the diagnostics unroll a bounded
+  # number of hops: the detection (any target that is itself an old path) is
+  # exact, the "loop" label and the suggested final target are best-effort.
+  redirect_chains = [
+    for e in local.redirect_entries : {
+      from  = e.from
+      to    = e.to
+      nfrom = e.nfrom
+      h1    = e.nto
+      h2    = lookup(local.redirect_hop, e.nto, null)
+    }
+    if contains(local.redirect_keys, e.nto) && e.nfrom != e.nto
+  ]
+
+  redirect_chain_reports = [
+    for c in local.redirect_chains :
+    (c.h2 == c.nfrom || (c.h2 != null && lookup(local.redirect_hop, coalesce(c.h2, "\u0000"), null) == c.nfrom))
+    ? format("loop: %q sends to %q, which comes back to it", c.from, c.to)
+    : format("chain: %q sends to %q, which is itself an old path on this list; point it straight at %q", c.from, c.to,
+    lookup(local.redirect_table, c.h2 == null ? c.h1 : (contains(local.redirect_keys, c.h2) ? c.h2 : c.h1), c.to))
+  ]
+
+  # -- render ----------------------------------------------------------------
+  # The lookup block is emitted only for a non-empty list, and it carries its own
+  # trailing blank line, so an empty list adds exactly zero bytes.
+  redirect_block = length(var.redirects) == 0 ? "" : <<EOT
+      var t = ${jsonencode(local.redirect_table)};
+      var k = uri;
+      if (k.slice(-11) === "/index.html") {
+        k = k.slice(0, -11);
+      } else if (k.slice(-1) === "/") {
+        k = k.slice(0, -1);
+      }
+      var d = t[k];
+      if (d) {
+        var q = request.querystring;
+        var s = "";
+        var n, i, m;
+        for (n in q) {
+          m = q[n].multiValue;
+          if (m) {
+            for (i = 0; i < m.length; i++) {
+              s += (s ? "&" : "?") + n + (m[i].value ? "=" + m[i].value : "");
+            }
+          } else {
+            s += (s ? "&" : "?") + n + (q[n].value ? "=" + q[n].value : "");
+          }
+        }
+        return {
+          statusCode: 301,
+          statusDescription: "Moved Permanently",
+          headers: {
+            "location": { value: "https://${var.domain_name}" + d + s },
+            "cache-control": { value: "max-age=31536000" }
+          }
+        };
+      }
+
+EOT
+
+  redirect_function_code = <<-EOT
     function handler(event) {
       var request = event.request;
       var uri = request.uri;
-
-      if (uri.startsWith("/.well-known/host-meta")) {
-        return {
-          statusCode: 302,
-          statusDescription: "Found",
-          headers: {
-            "location": { value: "https://fed.brid.gy" + uri }
-          }
-        };
-      }
-
-      if (uri.startsWith("/.well-known/webfinger")) {
-        return {
-          statusCode: 302,
-          statusDescription: "Found",
-          headers: {
-            "location": { value: "https://fed.brid.gy" + uri }
-          }
-        };
-      }
 %{if var.atproto_did != null}
       if (uri === "/.well-known/atproto-did") {
         return {
@@ -86,9 +192,71 @@ resource "aws_cloudfront_function" "redirect_function" {
         };
       }
 %{endif}
-      return request;
+${local.redirect_block}      return request;
     }
   EOT
+
+  redirect_code_bytes   = length(local.redirect_function_code)
+  redirect_code_percent = floor(local.redirect_code_bytes * 100 / local.redirect_budget)
+}
+
+resource "aws_cloudfront_function" "redirect_function" {
+  name    = var.redirect_function_name
+  runtime = "cloudfront-js-1.0"
+  publish = true
+  code    = local.redirect_function_code
+
+  lifecycle {
+    # A rename creates and associates the new function before the old one is
+    # deleted, so the distribution never points at a deleted function (ADR-021).
+    # This adds no plan diff for a consumer that keeps the default name.
+    create_before_destroy = true
+
+    precondition {
+      condition     = length(local.redirect_malformed) == 0
+      error_message = "Redirect list rejected: V-01 (malformed path): ${join(", ", formatlist("%q", local.redirect_malformed))}. Every path must start with \"/\", use only A-Z a-z 0-9 . _ ~ % / -, and contain no \"//\", \"?\", \"#\", or whitespace. A target on another host is never allowed. Nothing was changed."
+    }
+
+    precondition {
+      condition     = length(local.redirect_not_a_page) == 0
+      error_message = "Redirect list rejected: V-02 (target is not a page): ${join(", ", formatlist("%q", local.redirect_not_a_page))}. A target must end in \"/\" or name a file, or the origin bounces the reader a second time. Nothing was changed."
+    }
+
+    precondition {
+      condition     = length(local.redirect_root_old_path) == 0
+      error_message = "Redirect list rejected: V-03 (site root as an old path): \"/\" cannot be redirected. Nothing was changed."
+    }
+
+    precondition {
+      condition     = length(local.redirect_reserved) == 0
+      error_message = "Redirect list rejected: V-04 (reserved path): ${join(", ", formatlist("%q", local.redirect_reserved))}. ${join(" and ", formatlist("%q", local.redirect_reserved_prefixes))} are reserved for identity and discovery and are never redirected by a content list. Nothing was changed."
+    }
+
+    precondition {
+      condition     = length(local.redirect_duplicates) == 0
+      error_message = "Redirect list rejected: V-05 (duplicate old path): ${join("; ", local.redirect_duplicates)}. Every spelling of one old path is the same entry: keep one. Nothing was changed."
+    }
+
+    precondition {
+      condition     = length(local.redirect_self) == 0
+      error_message = "Redirect list rejected: V-06 (self-redirect): ${join(", ", formatlist("%q", local.redirect_self))} sends to itself. Remove the entry. Nothing was changed."
+    }
+
+    precondition {
+      condition     = length(local.redirect_chain_reports) == 0
+      error_message = "Redirect list rejected: V-07 (${join("; ", local.redirect_chain_reports)}). Every old path must reach a surviving page in one hop. Nothing was changed."
+    }
+
+    precondition {
+      condition     = local.redirect_code_bytes <= local.redirect_budget
+      error_message = "Redirect list rejected: V-08 (over the edge code budget): the rendered function is ${local.redirect_code_bytes} bytes, and the CloudFront Functions limit is ${local.redirect_budget} bytes. Prune old redirects, or move the list to a larger store (a CloudFront KeyValueStore, which needs a newer provider). Nothing was changed."
+    }
+
+    precondition {
+      condition     = alltrue([for p in local.redirect_module_paths : anytrue([for r in local.redirect_reserved_prefixes : startswith(p, r)])])
+      error_message = "Redirect list rejected: V-10 (module self-check): this module answers ${join(", ", formatlist("%q", local.redirect_module_paths))}, and at least one of those paths is not covered by a reserved prefix, so a list entry could shadow it. Add the prefix to local.redirect_reserved_prefixes. Nothing was changed."
+    }
+  }
 }
 
 resource "aws_cloudfront_function" "bsky_oembed_function" {

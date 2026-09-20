@@ -11,6 +11,7 @@
   - [Dependencies](#dependencies)
   - [Usage](#usage)
     - [Inputs](#inputs)
+    - [Edge redirects](#edge-redirects)
     - [Outputs](#outputs)
   - [Author Information](#author-information)
   - [License](#license)
@@ -100,6 +101,8 @@ Then, fetch the module from the [Terraform Registry](https://registry.terraform.
 | s3_use_prefix | Toggle to use randomly-generated Prefix for Bucket Name | `bool` | `false` |
 | security_headers | Optional structured security headers; module generates an `aws_cloudfront_response_headers_policy` from them and attaches to the distribution. Object fields: `content_security_policy` (string). Mutually exclusive with `response_headers_policy_id`. | `object` | `null` |
 | response_headers_policy_id | Optional pre-built `aws_cloudfront_response_headers_policy` id (e.g., AWS managed policy or a shared cross-distribution policy). Attached to the distribution directly. Mutually exclusive with `security_headers`. | `string` | `null` |
+| redirects | Edge 301 redirects, rendered into the viewer-request function as an exact-match lookup table. See [Edge redirects](#edge-redirects). | `list(object({ from = string, to = string }))` | `[]` |
+| redirect_function_name | Name of the viewer-request CloudFront Function. Unique per AWS account. | `string` | `"redirect-function"` |
 
 #### Response-headers policy (ADR-MCEJU-003)
 
@@ -125,6 +128,77 @@ module "cloudfront_website" {
 
 Setting both is a plan-time error: the precondition on `terraform_data.validate_security_headers_exclusive` names both variables in the message. Neither variable set preserves the module's pre-existing behavior (no response-headers policy attached).
 
+### Edge redirects
+
+`var.redirects` turns a list of merged-away pages into real HTTP 301s, answered by the existing viewer-request CloudFront Function before the cache and the origin are reached. The default empty list renders the same code as before, so a consumer that sets nothing sees no redirect behavior at all.
+
+```hcl
+module "cloudfront_website" {
+  source = "..."
+  # ...
+  domain_name = "example.com"
+
+  redirects = [
+    { from = "/blog/2019/11/23/old-post/", to = "/blog/2019/11/10/surviving-post/" },
+  ]
+}
+
+output "redirects" {
+  value = module.cloudfront_website.redirects_summary
+}
+```
+
+Keeping the list in a file beside the root configuration, so that adding a redirect is a one-line data change, is the pattern this was built for:
+
+```hcl
+redirects = [
+  for entry in yamldecode(file("${path.module}/redirects.yaml")).redirects :
+  { from = entry.from, to = entry.to }
+]
+```
+
+The module never reads a consumer file itself. Projecting each entry explicitly means a misspelled key fails the plan instead of being dropped.
+
+**What the edge does.** The path is normalized — a trailing `/index.html` is dropped, otherwise one trailing `/` — and looked up in a JSON table keyed the same way, so the `/old-post/`, `/old-post` and `/old-post/index.html` spellings all reach the target in one hop. Matching is exact and case-sensitive. A hit answers:
+
+- `301 Moved Permanently`
+- `location: https://<var.domain_name><to>`, plus `?` and the request's query string when there is one. The host always comes from the module input, never from the request, so a list entry can never open a redirect to a foreign host.
+- `cache-control: max-age=31536000`
+
+A miss is passed through to the origin unchanged.
+
+**One year of browser cache.** A returning visitor whose browser cached a wrong redirect follows it for up to a year without asking the edge again, and no later edit reaches that browser. So: run the checks before every apply, and **correct a wrong entry by changing its `to`, never by deleting it**. Re-pointing serves the corrected 301 immediately and keeps the signal consistent for search engines; deleting brings the old page back for crawlers while cached browsers still go to the wrong target.
+
+**Rules checked at plan time.** These are `lifecycle` preconditions on the function, so they run during `tofu plan`, before any AWS call. A failure aborts the plan and changes nothing. Each message names its rule, the offending entries, and the fix.
+
+| Rule | What it rejects |
+|------|-----------------|
+| V-01 | A path that does not start with `/`, uses characters outside `A-Z a-z 0-9 . _ ~ % / -`, or contains `//`, `?`, `#`, or whitespace. This is also what keeps a target on the same site, and what keeps characters equal to bytes for the budget. |
+| V-02 | A target that neither ends in `/` nor names a file, which the origin would bounce a second time |
+| V-03 | `/` as an old path |
+| V-04 | An old path under `/.well-known/` or under the Bluesky oEmbed prefix — identity and discovery paths are never redirected by a content list |
+| V-05 | The same old path listed twice, in any spelling. The message names both targets. |
+| V-06 | An entry that points at itself |
+| V-07 | A target that is itself an old path on the list (a chain), or a pair that points at each other (a loop). Chain messages suggest the final target. |
+| V-08 | A rendered function over 10,240 bytes, the CloudFront Functions limit |
+| V-10 | A path the module answers itself that no reserved prefix covers. The validator checks the module, not just the list. |
+
+**Budget.** `redirects_summary` reports `"<N> redirects, <B> of 10240 bytes (<P>%)"`, and appends `"; WARNING: <P>% of the edge code budget used, <R> bytes remain"` at 80% of the limit. Re-export it from the root to see the line in the plan's *Changes to Outputs*. An entry costs about `len(from) + len(to) + 6` bytes, so roughly 60 to 70 entries fit inside the warning threshold. Past that, the scale path is a CloudFront KeyValueStore, which needs a newer AWS provider than this module requires.
+
+**Function name and shared accounts.** CloudFront Function names are unique per AWS account, and the name forces replacement. `redirect_function_name` defaults to the legacy `redirect-function`, so no existing consumer is renamed. A second site in the same account must pick its own name — a domain-derived one such as `example-com-redirect` reads well. The resource is `create_before_destroy`, so a rename creates and associates the new function before the old one is deleted, and the distribution never points at a deleted function. Never bundle a rename with a list change: plan and apply it on its own.
+
+**Verifying after apply.**
+
+```console
+$ curl -sI https://example.com/blog/2019/11/23/old-post/
+HTTP/2 301
+location: https://example.com/blog/2019/11/10/surviving-post/
+cache-control: max-age=31536000
+x-cache: FunctionGeneratedResponse from cloudfront
+```
+
+Check the slash-less and `/index.html` spellings and one query string too, then confirm `tofu plan` reports no changes.
+
 ### Outputs
 
 | Name | Description |
@@ -145,6 +219,7 @@ Setting both is a plan-time error: the precondition on `terraform_data.validate_
 | distribution_last_modified_time | Date and time of last modification for the CloudFront Distribution |
 | distribution_status | Status of the CloudFront Distribution |
 | origin_access_identity_etag | Identifier of current version of the Origin Access Identity |
+| redirects_summary | Number of edge redirects published, and the rendered function size against the 10,240-byte limit. Carries a `WARNING` at 80% of the budget. |
 | origin_access_identity_iam_arn | ARN of the Origin Access Identity |
 | origin_access_identity_id | Identifier of the CloudFront Distribution |
 | origin_access_identity_path | Full path of the Origin Access Identity |

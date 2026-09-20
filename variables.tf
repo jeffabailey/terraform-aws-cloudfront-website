@@ -158,6 +158,32 @@ variable "atproto_did" {
   default     = null
 }
 
+# -----------------------------------------------------------------------------
+# Edge redirects (ADR-016, ADR-017, ADR-018, ADR-019, ADR-021)
+#
+# Both variables default to today's behavior, so a consumer that sets neither
+# keeps the function name `redirect-function` and a render that is byte-identical
+# to the pre-0.7.0 code minus the removed Bridgy Fed blocks (ADR-020).
+# -----------------------------------------------------------------------------
+
+variable "redirects" {
+  type        = list(object({ from = string, to = string }))
+  description = "Edge 301 redirects, rendered into the viewer-request function as an exact-match lookup table. `from` is the old site-relative path (any of its `/`, no-slash, or `/index.html` spellings), `to` is the site-relative target used verbatim in the Location. A list, not a map, so duplicates can be reported with both targets. Empty leaves the rendered code unchanged."
+  default     = []
+  nullable    = false
+}
+
+variable "redirect_function_name" {
+  type        = string
+  description = "Name of the viewer-request CloudFront Function. The default is the legacy name, so no consumer is renamed. CloudFront Function names are unique per AWS account: a second site in the same account must set a distinct name, for example `unintelligent-design-us-redirect`. A rename is a create-before-destroy replacement (ADR-021); never bundle it with a list change."
+  default     = "redirect-function"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_-]{1,64}$", var.redirect_function_name))
+    error_message = "redirect_function_name must match ^[A-Za-z0-9_-]{1,64}$ — the CloudFront Functions name rule."
+  }
+}
+
 variable "bsky_oembed_enabled" {
   type        = bool
   description = "Enable Bluesky oEmbed proxy behavior on CloudFront"

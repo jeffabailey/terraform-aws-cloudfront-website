@@ -79,6 +79,26 @@ output "distribution_hosted_zone_id" {
 #  description = "IAM Policy Document for S3 Bucket Policy (in JSON Format)"
 #}
 
+# V-09: the edge code budget, reported as a string rather than a `check` block,
+# so `required_version` stays at >= 1.4.0 (ADR-019). Only V-08 (over the limit)
+# fails the plan; this warns at 80% and is otherwise informational. Re-export it
+# from the root to see it in the plan's "Changes to Outputs".
+output "redirects_summary" {
+  value = format(
+    "%d redirects, %d of %d bytes (%d%%)%s",
+    length(var.redirects),
+    local.redirect_code_bytes,
+    local.redirect_budget,
+    local.redirect_code_percent,
+    local.redirect_code_bytes < local.redirect_warn_at ? "" : format(
+      "; WARNING: %d%% of the edge code budget used, %d bytes remain",
+      local.redirect_code_percent,
+      local.redirect_budget - local.redirect_code_bytes,
+    ),
+  )
+  description = "Number of edge redirects published, and the rendered CloudFront Function size against the 10,240-byte limit. Carries a WARNING at 80% of the budget."
+}
+
 output "route53_record_names" {
   value       = aws_route53_record.this[*].name
   description = "Name of the Route 53 Record Name(s)"
