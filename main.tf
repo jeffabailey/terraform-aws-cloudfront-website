@@ -313,9 +313,45 @@ resource "aws_cloudfront_response_headers_policy" "this" {
   comment = "Module-managed response-headers policy for ${var.domain_name}. Generated from var.security_headers."
 
   security_headers_config {
-    content_security_policy {
-      content_security_policy = var.security_headers.content_security_policy
-      override                = true
+    dynamic "content_security_policy" {
+      for_each = var.security_headers.content_security_policy != null ? [var.security_headers.content_security_policy] : []
+      content {
+        content_security_policy = content_security_policy.value
+        override                = true
+      }
+    }
+
+    dynamic "strict_transport_security" {
+      for_each = var.security_headers.strict_transport_security != null ? [var.security_headers.strict_transport_security] : []
+      content {
+        access_control_max_age_sec = strict_transport_security.value.max_age_sec
+        include_subdomains         = strict_transport_security.value.include_subdomains
+        preload                    = strict_transport_security.value.preload
+        override                   = true
+      }
+    }
+
+    dynamic "content_type_options" {
+      for_each = var.security_headers.content_type_options_nosniff ? [true] : []
+      content {
+        override = true
+      }
+    }
+
+    dynamic "referrer_policy" {
+      for_each = var.security_headers.referrer_policy != null ? [var.security_headers.referrer_policy] : []
+      content {
+        referrer_policy = referrer_policy.value
+        override        = true
+      }
+    }
+
+    dynamic "frame_options" {
+      for_each = var.security_headers.frame_option != null ? [var.security_headers.frame_option] : []
+      content {
+        frame_option = frame_options.value
+        override     = true
+      }
     }
   }
 }

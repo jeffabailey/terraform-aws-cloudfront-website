@@ -99,7 +99,7 @@ Then, fetch the module from the [Terraform Registry](https://registry.terraform.
 | s3_tags | Mapping of Tags of S3 Bucket | `map(string)` | `{}` |
 | s3_use_default_tags | Toggle to enable creation of default tags for S3 Bucket, containing Terraform Workspace identifier | `bool` | `true` |
 | s3_use_prefix | Toggle to use randomly-generated Prefix for Bucket Name | `bool` | `false` |
-| security_headers | Optional structured security headers; module generates an `aws_cloudfront_response_headers_policy` from them and attaches to the distribution. Object fields: `content_security_policy` (string). Mutually exclusive with `response_headers_policy_id`. | `object` | `null` |
+| security_headers | Optional structured security headers; module generates an `aws_cloudfront_response_headers_policy` from them and attaches to the distribution. Object fields: `content_security_policy` (string), `strict_transport_security` (object: `max_age_sec`, `include_subdomains`, `preload`), `content_type_options_nosniff` (bool), `referrer_policy` (string), `frame_option` (`DENY` or `SAMEORIGIN`). Each is emitted only when set. Mutually exclusive with `response_headers_policy_id`. | `object` | `null` |
 | response_headers_policy_id | Optional pre-built `aws_cloudfront_response_headers_policy` id (e.g., AWS managed policy or a shared cross-distribution policy). Attached to the distribution directly. Mutually exclusive with `security_headers`. | `string` | `null` |
 | redirects | Edge 301 redirects, rendered into the viewer-request function as an exact-match lookup table. See [Edge redirects](#edge-redirects). | `list(object({ from = string, to = string }))` | `[]` |
 | redirect_function_name | Name of the viewer-request CloudFront Function. Unique per AWS account. | `string` | `"redirect-function"` |
@@ -115,6 +115,16 @@ module "cloudfront_website" {
   # ...
   security_headers = {
     content_security_policy = "frame-src https://element.example.com"
+
+    # All optional; each header is emitted only when set.
+    strict_transport_security = {
+      max_age_sec        = 31536000
+      include_subdomains = true  # only when every subdomain serves HTTPS
+      preload            = false # the preload list is slow to undo
+    }
+    content_type_options_nosniff = true
+    referrer_policy              = "strict-origin-when-cross-origin"
+    frame_option                 = "SAMEORIGIN" # or DENY
   }
 }
 

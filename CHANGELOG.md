@@ -1,3 +1,16 @@
+## 0.8.0
+
+### Added
+
+- `security_headers` gains optional `strict_transport_security`
+  (`max_age_sec`, `include_subdomains`, `preload`), `content_type_options_nosniff`,
+  `referrer_policy`, and `frame_option`. Each header is emitted only when set,
+  so a consumer passing only `content_security_policy` keeps its current policy
+  unchanged.
+- `tests/security_headers.tftest.hcl` pins that behaviour: CSP-only callers get
+  exactly one header, every field emits its block when set, and a caller with no
+  `security_headers` gets no policy at all.
+
 ## 0.7.0 (2026-09-19)
 
 ### BREAKING

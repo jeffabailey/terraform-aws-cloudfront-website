@@ -214,8 +214,20 @@ variable "bsky_oembed_path_pattern" {
 variable "security_headers" {
   type = object({
     content_security_policy = optional(string)
+
+    # Each field below is optional and emits its header only when set, so a
+    # consumer that passes only content_security_policy keeps its current
+    # policy byte-for-byte.
+    strict_transport_security = optional(object({
+      max_age_sec        = number
+      include_subdomains = optional(bool, false)
+      preload            = optional(bool, false)
+    }))
+    content_type_options_nosniff = optional(bool, false)
+    referrer_policy              = optional(string)
+    frame_option                 = optional(string)
   })
-  description = "Optional structured security headers. When set, the module creates an aws_cloudfront_response_headers_policy from these fields and attaches it to the distribution's default cache behavior. Mutually exclusive with response_headers_policy_id. Default null preserves existing distribution behavior."
+  description = "Optional structured security headers. When set, the module creates an aws_cloudfront_response_headers_policy from these fields and attaches it to the distribution's default cache behavior. Each field is emitted only when set. frame_option takes DENY or SAMEORIGIN; referrer_policy takes a CloudFront-supported value such as strict-origin-when-cross-origin. Mutually exclusive with response_headers_policy_id. Default null preserves existing distribution behavior."
   default     = null
 }
 
