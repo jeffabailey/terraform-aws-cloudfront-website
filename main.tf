@@ -58,6 +58,15 @@ resource "aws_s3_bucket_public_access_block" "this" {
 # -----------------------------------------------------------------------------
 
 locals {
+  # CloudFront Function names are unique per AWS account, so two sites sharing a
+  # literal name share one function: whichever applies last overwrites the other
+  # and silently takes over its behavior. Derive from domain_name, which is
+  # already unique per site, and let a consumer pin a legacy name explicitly.
+  function_name_stem = substr(replace(replace(lower(var.domain_name), ".", "-"), "/[^a-z0-9-]/", ""), 0, 48)
+
+  redirect_function_name    = coalesce(var.redirect_function_name, "${local.function_name_stem}-redirect")
+  bsky_oembed_function_name = coalesce(var.bsky_oembed_function_name, "${local.function_name_stem}-bsky-oembed")
+
   redirect_budget  = 10240 # CloudFront Functions maximum code size, in bytes
   redirect_warn_at = 8192  # 80% of the budget: warn, but do not fail
 
@@ -201,7 +210,7 @@ ${local.redirect_block}      return request;
 }
 
 resource "aws_cloudfront_function" "redirect_function" {
-  name    = var.redirect_function_name
+  name    = local.redirect_function_name
   runtime = "cloudfront-js-1.0"
   publish = true
   code    = local.redirect_function_code
@@ -261,7 +270,7 @@ resource "aws_cloudfront_function" "redirect_function" {
 
 resource "aws_cloudfront_function" "bsky_oembed_function" {
   count   = var.bsky_oembed_enabled ? 1 : 0
-  name    = "bsky-oembed-function"
+  name    = local.bsky_oembed_function_name
   runtime = "cloudfront-js-1.0"
   publish = true
   code    = <<-EOT

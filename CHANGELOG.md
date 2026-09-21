@@ -1,3 +1,41 @@
+## 0.9.0
+
+### Changed
+
+- **Breaking for consumers that relied on the default function name.**
+  `redirect_function_name` now defaults to `null` and derives `<domain>-redirect`
+  from `domain_name`. `bsky_oembed_function_name` is new, defaults to `null`, and
+  derives `<domain>-bsky-oembed`; that function's name was previously hard-coded
+  with no way to change it.
+
+  CloudFront Function names are unique per AWS account, so the old shared literals
+  meant every consumer in an account was configured to manage the same function.
+  Two were: `jeffbailey.us` and `unintelligent-design.us` both pointed at
+  `redirect-function`, and the second state held a stale 627-byte version that an
+  apply would have written over the first site's live redirect table.
+
+  A consumer whose distribution already points at a legacy-named function must pin
+  it, or the next plan is a rename:
+
+  ```hcl
+  redirect_function_name    = "redirect-function"
+  bsky_oembed_function_name = "bsky-oembed-function"
+  ```
+
+  A rename is a create-before-destroy replacement (ADR-021). Plan it on its own.
+
+### Added
+
+- `redirect_function_name` and `bsky_oembed_function_name` outputs, so a consumer
+  can see the resolved name and two sites reporting the same value are visible.
+- `tests/function_names.tftest.hcl` pins the derivation: names differ per domain,
+  an explicit name wins, and the bsky name is null when the behavior is disabled.
+
+### Fixed
+
+- `tests/redirect_render.tftest.hcl` asserted that the default name must stay the
+  legacy literal. That assertion encoded the collision and now checks the opposite.
+
 ## 0.8.0
 
 ### Added

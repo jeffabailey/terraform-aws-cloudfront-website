@@ -85,7 +85,14 @@ run "the_summary_measures_the_code_that_is_uploaded" {
   }
 }
 
-run "the_name_is_the_legacy_one_unless_a_consumer_asks" {
+# This run previously asserted the opposite: that the default name stays the
+# legacy literal "redirect-function" so no consumer is renamed. That default was
+# the bug. Function names are unique per AWS account, so every consumer taking
+# the same default meant every consumer managed one function, and two of them
+# did: jeffbailey.us and unintelligent-design.us both pointed at it, with the
+# second state holding stale code that an apply would have written back.
+# The default is now derived per site; a legacy name is pinned explicitly.
+run "the_default_name_is_derived_per_site" {
   command = plan
 
   variables {
@@ -93,8 +100,13 @@ run "the_name_is_the_legacy_one_unless_a_consumer_asks" {
   }
 
   assert {
-    condition     = aws_cloudfront_function.redirect_function.name == "redirect-function"
-    error_message = "The default function name must stay the legacy one, or every consumer gets a replacement (ADR-021)."
+    condition     = aws_cloudfront_function.redirect_function.name == "jeffbailey-us-redirect"
+    error_message = "The default must derive from domain_name so two sites in one account cannot share a function."
+  }
+
+  assert {
+    condition     = aws_cloudfront_function.redirect_function.name != "redirect-function"
+    error_message = "The shared literal default is what allowed two states to claim one function; it must not come back."
   }
 }
 

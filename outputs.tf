@@ -108,3 +108,13 @@ output "route53_record_fqdn" {
   value       = aws_route53_record.this[*].fqdn
   description = "Name of the Route 53 Record FQDN"
 }
+
+output "redirect_function_name" {
+  description = "Resolved name of the viewer-request CloudFront Function. Derived from domain_name unless redirect_function_name pins a legacy name. Names are unique per AWS account, so two sites reporting the same value share one function."
+  value       = local.redirect_function_name
+}
+
+output "bsky_oembed_function_name" {
+  description = "Resolved name of the Bluesky oEmbed CloudFront Function, or null when the behavior is disabled."
+  value       = var.bsky_oembed_enabled ? local.bsky_oembed_function_name : null
+}

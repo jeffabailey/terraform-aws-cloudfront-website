@@ -175,12 +175,23 @@ variable "redirects" {
 
 variable "redirect_function_name" {
   type        = string
-  description = "Name of the viewer-request CloudFront Function. The default is the legacy name, so no consumer is renamed. CloudFront Function names are unique per AWS account: a second site in the same account must set a distinct name, for example `unintelligent-design-us-redirect`. A rename is a create-before-destroy replacement (ADR-021); never bundle it with a list change."
-  default     = "redirect-function"
+  description = "Name of the viewer-request CloudFront Function. Leave null to derive a per-site name from `domain_name`, which is what you want: CloudFront Function names are unique per AWS account, so a shared literal makes two sites manage one function and the second apply overwrites the first. Set this only to keep a legacy name a live distribution already points at. A rename is a create-before-destroy replacement (ADR-021); never bundle it with a list change."
+  default     = null
 
   validation {
-    condition     = can(regex("^[A-Za-z0-9_-]{1,64}$", var.redirect_function_name))
+    condition     = var.redirect_function_name == null || can(regex("^[A-Za-z0-9_-]{1,64}$", var.redirect_function_name))
     error_message = "redirect_function_name must match ^[A-Za-z0-9_-]{1,64}$ — the CloudFront Functions name rule."
+  }
+}
+
+variable "bsky_oembed_function_name" {
+  type        = string
+  description = "Name of the Bluesky oEmbed CloudFront Function. Leave null to derive a per-site name from `domain_name`. Same account-wide uniqueness rule as `redirect_function_name`; set this only to keep a legacy name."
+  default     = null
+
+  validation {
+    condition     = var.bsky_oembed_function_name == null || can(regex("^[A-Za-z0-9_-]{1,64}$", var.bsky_oembed_function_name))
+    error_message = "bsky_oembed_function_name must match ^[A-Za-z0-9_-]{1,64}$ — the CloudFront Functions name rule."
   }
 }
 

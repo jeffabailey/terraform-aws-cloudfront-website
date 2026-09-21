@@ -102,7 +102,8 @@ Then, fetch the module from the [Terraform Registry](https://registry.terraform.
 | security_headers | Optional structured security headers; module generates an `aws_cloudfront_response_headers_policy` from them and attaches to the distribution. Object fields: `content_security_policy` (string), `strict_transport_security` (object: `max_age_sec`, `include_subdomains`, `preload`), `content_type_options_nosniff` (bool), `referrer_policy` (string), `frame_option` (`DENY` or `SAMEORIGIN`). Each is emitted only when set. Mutually exclusive with `response_headers_policy_id`. | `object` | `null` |
 | response_headers_policy_id | Optional pre-built `aws_cloudfront_response_headers_policy` id (e.g., AWS managed policy or a shared cross-distribution policy). Attached to the distribution directly. Mutually exclusive with `security_headers`. | `string` | `null` |
 | redirects | Edge 301 redirects, rendered into the viewer-request function as an exact-match lookup table. See [Edge redirects](#edge-redirects). | `list(object({ from = string, to = string }))` | `[]` |
-| redirect_function_name | Name of the viewer-request CloudFront Function. Unique per AWS account. | `string` | `"redirect-function"` |
+| redirect_function_name | Name of the viewer-request CloudFront Function. Unique per AWS account. Null derives `<domain>-redirect`. | `string` | `null` |
+| bsky_oembed_function_name | Name of the Bluesky oEmbed CloudFront Function. Null derives `<domain>-bsky-oembed`. | `string` | `null` |
 
 #### Response-headers policy (ADR-MCEJU-003)
 
@@ -195,7 +196,7 @@ A miss is passed through to the origin unchanged.
 
 **Budget.** `redirects_summary` reports `"<N> redirects, <B> of 10240 bytes (<P>%)"`, and appends `"; WARNING: <P>% of the edge code budget used, <R> bytes remain"` at 80% of the limit. Re-export it from the root to see the line in the plan's *Changes to Outputs*. An entry costs about `len(from) + len(to) + 6` bytes, so roughly 60 to 70 entries fit inside the warning threshold. Past that, the scale path is a CloudFront KeyValueStore, which needs a newer AWS provider than this module requires.
 
-**Function name and shared accounts.** CloudFront Function names are unique per AWS account, and the name forces replacement. `redirect_function_name` defaults to the legacy `redirect-function`, so no existing consumer is renamed. A second site in the same account must pick its own name — a domain-derived one such as `example-com-redirect` reads well. The resource is `create_before_destroy`, so a rename creates and associates the new function before the old one is deleted, and the distribution never points at a deleted function. Never bundle a rename with a list change: plan and apply it on its own.
+**Function name and shared accounts.** CloudFront Function names are unique per AWS account, and the name forces replacement. Both function names now derive from `domain_name` when left null, giving `example-com-redirect` and `example-com-bsky-oembed`. That default exists because the previous one did not: every consumer took the literal `redirect-function`, so every consumer was configured to manage the same function. Two of them did, and the second state held stale code that an apply would have written over the first site's live redirects. Set `redirect_function_name` or `bsky_oembed_function_name` only to pin a legacy name a live distribution already points at. The resource is `create_before_destroy`, so a rename creates and associates the new function before the old one is deleted, and the distribution never points at a deleted function. Never bundle a rename with a list change: plan and apply it on its own.
 
 **Verifying after apply.**
 
