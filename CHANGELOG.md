@@ -1,5 +1,27 @@
 ## 0.9.0
 
+### Removed
+
+- `providers.tf` and its `provider "aws" { alias = "global" }` block. A shared
+  module must not configure providers: it makes the directory applyable as a
+  root module, which is how a stray `terraform.tfstate` came to sit in the
+  module, and it blocks consumers from passing their own configuration.
+
+  The block was declared and never used, and it was breaking every consumer that
+  passed a provider in. `everything-is-balance`, `my-thoughts-are-not-my-own`,
+  and `political-incorruption` all failed `validate` with:
+
+  ```
+  Error: Cannot override provider configuration
+  The configuration of module.cloudfront_website has its own local
+  configuration for aws.global, and so it cannot accept an overridden
+  configuration provided by the root module.
+  ```
+
+  All three validate after the removal. Consumers still passing `aws.global` or
+  `aws.distribution` now get a warning rather than an error; the module uses
+  neither alias, so those lines can be deleted from the `providers` block.
+
 ### Changed
 
 - **Breaking for consumers that relied on the default function name.**
