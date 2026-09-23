@@ -1,3 +1,23 @@
+## 0.10.0
+
+### Added
+
+- `canonical_trailing_slash` (bool, default `false`). When set, a directory URL
+  that arrives without a trailing slash is answered at the edge with a 301 to
+  the slashed form, instead of the S3 website origin's 302. A 302 is a temporary
+  redirect for a permanent fact and costs a round trip to the origin.
+
+  It runs after the redirect table, so an explicit entry always wins, and skips
+  anything that names a file (a dot after the last slash), the site root, and
+  `/.well-known/` (one of which is this module's own `atproto-did`). Its
+  `cache-control` is `max-age=86400`, not the table's year: the rule applies to
+  any extension-less path, including pages that do not exist yet.
+
+  Default `false`, so no existing consumer changes: verified by a test asserting
+  the block does not render unless asked for.
+
+- `tests/trailing_slash.tftest.hcl`.
+
 ## 0.9.0
 
 ### Removed

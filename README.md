@@ -103,6 +103,7 @@ Then, fetch the module from the [Terraform Registry](https://registry.terraform.
 | response_headers_policy_id | Optional pre-built `aws_cloudfront_response_headers_policy` id (e.g., AWS managed policy or a shared cross-distribution policy). Attached to the distribution directly. Mutually exclusive with `security_headers`. | `string` | `null` |
 | redirects | Edge 301 redirects, rendered into the viewer-request function as an exact-match lookup table. See [Edge redirects](#edge-redirects). | `list(object({ from = string, to = string }))` | `[]` |
 | redirect_function_name | Name of the viewer-request CloudFront Function. Unique per AWS account. Null derives `<domain>-redirect`. | `string` | `null` |
+| canonical_trailing_slash | 301 a directory URL without a trailing slash to the slashed form, instead of the origin's 302. | `bool` | `false` |
 | bsky_oembed_function_name | Name of the Bluesky oEmbed CloudFront Function. Null derives `<domain>-bsky-oembed`. | `string` | `null` |
 
 #### Response-headers policy (ADR-MCEJU-003)

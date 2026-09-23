@@ -185,6 +185,40 @@ locals {
 
 EOT
 
+  # A directory URL without a trailing slash is answered by the S3 website
+  # origin with a 302. That is a temporary redirect for a permanent fact, and it
+  # costs a trip to the origin. Answered at the edge with a 301 instead, when the
+  # consumer asks for it. Runs after the redirect table, so an explicit entry
+  # always wins. Files (a dot after the last slash) and /.well-known/ are skipped:
+  # those are not directories, and one of them is this module's atproto-did.
+  trailing_slash_code = <<EOT
+      if (uri !== "/" && uri.slice(-1) !== "/" && uri.lastIndexOf(".") <= uri.lastIndexOf("/") && uri.indexOf("/.well-known/") !== 0) {
+        var tq = request.querystring;
+        var ts = "";
+        var tn, ti, tm;
+        for (tn in tq) {
+          tm = tq[tn].multiValue;
+          if (tm) {
+            for (ti = 0; ti < tm.length; ti++) {
+              ts += (ts ? "&" : "?") + tn + (tm[ti].value ? "=" + tm[ti].value : "");
+            }
+          } else {
+            ts += (ts ? "&" : "?") + tn + (tq[tn].value ? "=" + tq[tn].value : "");
+          }
+        }
+        return {
+          statusCode: 301,
+          statusDescription: "Moved Permanently",
+          headers: {
+            "location": { value: "https://${var.domain_name}" + uri + "/" + ts },
+            "cache-control": { value: "max-age=86400" }
+          }
+        };
+      }
+EOT
+
+  trailing_slash_block = var.canonical_trailing_slash ? local.trailing_slash_code : ""
+
   redirect_function_code = <<-EOT
     function handler(event) {
       var request = event.request;
@@ -201,7 +235,7 @@ EOT
         };
       }
 %{endif}
-${local.redirect_block}      return request;
+${local.redirect_block}${local.trailing_slash_block}      return request;
     }
   EOT
 

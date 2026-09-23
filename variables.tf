@@ -184,6 +184,13 @@ variable "redirect_function_name" {
   }
 }
 
+variable "canonical_trailing_slash" {
+  type        = bool
+  description = "Answer a directory URL that arrives without a trailing slash with a 301 to the slashed form. Off by default: with an S3 website origin these requests already work, but the origin answers 302, which passes signals less reliably and costs a round trip to the origin. Paths that name a file (a dot after the last slash) and anything under /.well-known/ are left alone."
+  default     = false
+  nullable    = false
+}
+
 variable "bsky_oembed_function_name" {
   type        = string
   description = "Name of the Bluesky oEmbed CloudFront Function. Leave null to derive a per-site name from `domain_name`. Same account-wide uniqueness rule as `redirect_function_name`; set this only to keep a legacy name."
