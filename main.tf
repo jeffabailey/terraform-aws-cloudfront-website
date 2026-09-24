@@ -320,6 +320,14 @@ resource "aws_cloudfront_function" "bsky_oembed_function" {
       return request;
     }
   EOT
+
+  lifecycle {
+    # Same reason as redirect_function above (ADR-021): a rename is a
+    # replacement, and CloudFront refuses to delete a function while a
+    # distribution still associates it. Without this, a rename destroys this
+    # function first and the apply fails against the live association.
+    create_before_destroy = true
+  }
 }
 
 
