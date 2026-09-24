@@ -202,6 +202,26 @@ variable "bsky_oembed_function_name" {
   }
 }
 
+variable "enable_cloudfront" {
+  type        = bool
+  description = <<-EOT
+    Create the CloudFront distribution and everything that only exists to serve it:
+    both edge functions, the response-headers policy, and the Route 53 alias records
+    that point at the distribution.
+
+    Set false for a site whose domain is served somewhere else (another CDN, or a
+    static host), so the distribution is paid for and maintained but never on the
+    serving path. Setting it false on a site that already has one tears those
+    resources down on the next apply.
+
+    The S3 bucket and the ACM certificate are deliberately NOT gated. The bucket
+    holds the content and outlives any CDN in front of it. The certificate is free,
+    harmless while unused, and re-issuing one means waiting on DNS validation again,
+    so keeping it makes re-enabling a single apply.
+  EOT
+  default     = true
+}
+
 variable "bsky_oembed_enabled" {
   type        = bool
   description = "Enable Bluesky oEmbed proxy behavior on CloudFront"

@@ -39,7 +39,7 @@ run "empty_list_renders_the_committed_baseline" {
   }
 
   assert {
-    condition     = aws_cloudfront_function.redirect_function.code == file("${path.module}/tests/golden/redirect_function_empty.js")
+    condition     = aws_cloudfront_function.redirect_function[0].code == file("${path.module}/tests/golden/redirect_function_empty.js")
     error_message = "With no redirects the rendered function must be byte-identical to tests/golden/redirect_function_empty.js, which is the pre-0.7.0 code minus the two Bridgy Fed blocks. A consumer that configures nothing must see one in-place update and nothing else (P-4, ADR-020)."
   }
 
@@ -61,26 +61,26 @@ run "the_summary_measures_the_code_that_is_uploaded" {
   # Architecture rule 2: one code string. The summary must report the length of
   # the very string the resource uploads, not a re-derived estimate.
   assert {
-    condition     = can(regex("^1 redirects, ${length(aws_cloudfront_function.redirect_function.code)} of 10240 bytes ", output.redirects_summary))
-    error_message = "The budget line must report length() of the uploaded code. Code is ${length(aws_cloudfront_function.redirect_function.code)} bytes, summary says: ${output.redirects_summary}."
+    condition     = can(regex("^1 redirects, ${length(aws_cloudfront_function.redirect_function[0].code)} of 10240 bytes ", output.redirects_summary))
+    error_message = "The budget line must report length() of the uploaded code. Code is ${length(aws_cloudfront_function.redirect_function[0].code)} bytes, summary says: ${output.redirects_summary}."
   }
 
   # The Location host comes from var.domain_name, never from the request, and
   # the generated 301 carries the one-year cache (ADR-018, NFR-6).
   assert {
-    condition     = can(regex("\"https://jeffbailey\\.us\" \\+ d \\+ s", aws_cloudfront_function.redirect_function.code))
+    condition     = can(regex("\"https://jeffbailey\\.us\" \\+ d \\+ s", aws_cloudfront_function.redirect_function[0].code))
     error_message = "The rendered Location must be built from var.domain_name."
   }
 
   assert {
-    condition     = can(regex("max-age=31536000", aws_cloudfront_function.redirect_function.code))
+    condition     = can(regex("max-age=31536000", aws_cloudfront_function.redirect_function[0].code))
     error_message = "Generated 301s must carry cache-control: max-age=31536000 (ADR-018, maintainer decision)."
   }
 
   # N(from) keys the table, so the trailing-slash, slash-less and /index.html
   # spellings all reach the target in one hop (US-02).
   assert {
-    condition     = can(regex("\\{\"/blog/2019/11/23/gitgithub-com-permission-denied-publickey\":\"/blog/2019/11/10/setting-ssh-key-permissions/\"\\}", aws_cloudfront_function.redirect_function.code))
+    condition     = can(regex("\\{\"/blog/2019/11/23/gitgithub-com-permission-denied-publickey\":\"/blog/2019/11/10/setting-ssh-key-permissions/\"\\}", aws_cloudfront_function.redirect_function[0].code))
     error_message = "The lookup table must be keyed by N(from) with the target verbatim."
   }
 }
@@ -100,12 +100,12 @@ run "the_default_name_is_derived_per_site" {
   }
 
   assert {
-    condition     = aws_cloudfront_function.redirect_function.name == "jeffbailey-us-redirect"
+    condition     = aws_cloudfront_function.redirect_function[0].name == "jeffbailey-us-redirect"
     error_message = "The default must derive from domain_name so two sites in one account cannot share a function."
   }
 
   assert {
-    condition     = aws_cloudfront_function.redirect_function.name != "redirect-function"
+    condition     = aws_cloudfront_function.redirect_function[0].name != "redirect-function"
     error_message = "The shared literal default is what allowed two states to claim one function; it must not come back."
   }
 }

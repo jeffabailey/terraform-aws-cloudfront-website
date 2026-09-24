@@ -244,6 +244,7 @@ ${local.redirect_block}${local.trailing_slash_block}      return request;
 }
 
 resource "aws_cloudfront_function" "redirect_function" {
+  count   = var.enable_cloudfront ? 1 : 0
   name    = local.redirect_function_name
   runtime = "cloudfront-js-1.0"
   publish = true
@@ -303,7 +304,7 @@ resource "aws_cloudfront_function" "redirect_function" {
 }
 
 resource "aws_cloudfront_function" "bsky_oembed_function" {
-  count   = var.bsky_oembed_enabled ? 1 : 0
+  count   = var.enable_cloudfront && var.bsky_oembed_enabled ? 1 : 0
   name    = local.bsky_oembed_function_name
   runtime = "cloudfront-js-1.0"
   publish = true
@@ -358,7 +359,7 @@ resource "terraform_data" "validate_security_headers_exclusive" {
 # takes precedence and this resource is skipped.
 
 resource "aws_cloudfront_response_headers_policy" "this" {
-  count = var.security_headers != null && var.response_headers_policy_id == null ? 1 : 0
+  count = var.enable_cloudfront && var.security_headers != null && var.response_headers_policy_id == null ? 1 : 0
 
   name    = "${var.s3_bucket_name}-response-headers"
   comment = "Module-managed response-headers policy for ${var.domain_name}. Generated from var.security_headers."
@@ -408,6 +409,8 @@ resource "aws_cloudfront_response_headers_policy" "this" {
 }
 
 resource "aws_cloudfront_distribution" "this" {
+  count = var.enable_cloudfront ? 1 : 0
+
   aliases = length(local.concatenated_records) > 0 ? local.concatenated_records : [var.domain_name]
   comment = var.cloudfront_comment
 
@@ -437,7 +440,7 @@ resource "aws_cloudfront_distribution" "this" {
 
     function_association {
       event_type   = "viewer-request"
-      function_arn = aws_cloudfront_function.redirect_function.arn
+      function_arn = aws_cloudfront_function.redirect_function[0].arn
     }
 
     forwarded_values {
@@ -580,15 +583,15 @@ resource "aws_cloudfront_distribution" "this" {
 }
 
 resource "aws_route53_record" "this" {
-  count = length(local.concatenated_records)
+  count = var.enable_cloudfront ? length(local.concatenated_records) : 0
 
   zone_id = var.route53_zone_id
   name    = local.concatenated_records[count.index]
   type    = "A"
 
   alias {
-    name                   = aws_cloudfront_distribution.this.domain_name
-    zone_id                = aws_cloudfront_distribution.this.hosted_zone_id
+    name                   = aws_cloudfront_distribution.this[0].domain_name
+    zone_id                = aws_cloudfront_distribution.this[0].hosted_zone_id
     evaluate_target_health = false
   }
 }

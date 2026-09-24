@@ -30,47 +30,47 @@ output "certificate_domain_name" {
 
 # TODO: cloudfront outputs
 output "distribution_id" {
-  value       = aws_cloudfront_distribution.this.id
+  value       = one(aws_cloudfront_distribution.this[*].id)
   description = "Identifier for the CloudFront Distribution"
 }
 
 output "distribution_arn" {
-  value       = aws_cloudfront_distribution.this.arn
+  value       = one(aws_cloudfront_distribution.this[*].arn)
   description = "ARN of the CloudFront Distribution"
 }
 
 output "distribution_status" {
-  value       = aws_cloudfront_distribution.this.status
+  value       = one(aws_cloudfront_distribution.this[*].status)
   description = "Status of the CloudFront Distribution"
 }
 
 output "distribution_active_trusted_signers" {
-  value       = aws_cloudfront_distribution.this.trusted_signers
+  value       = one(aws_cloudfront_distribution.this[*].trusted_signers)
   description = "Key Pair IDs that are able to sign private URLs for the CloudFront Distribution"
 }
 
 output "distribution_domain_name" {
-  value       = aws_cloudfront_distribution.this.domain_name
+  value       = one(aws_cloudfront_distribution.this[*].domain_name)
   description = "Domain Name of the CloudFront Distribution"
 }
 
 output "distribution_last_modified_time" {
-  value       = aws_cloudfront_distribution.this.last_modified_time
+  value       = one(aws_cloudfront_distribution.this[*].last_modified_time)
   description = "Date and time of last modification for the CloudFront Distribution"
 }
 
 output "distribution_in_progress_validation_batches" {
-  value       = aws_cloudfront_distribution.this.in_progress_validation_batches
+  value       = one(aws_cloudfront_distribution.this[*].in_progress_validation_batches)
   description = "Number of invalidation batches currently in progress for the CloudFront Distribution"
 }
 
 output "distribution_etag" {
-  value       = aws_cloudfront_distribution.this.etag
+  value       = one(aws_cloudfront_distribution.this[*].etag)
   description = "Identifier of Current Version of the CloudFront Distribution"
 }
 
 output "distribution_hosted_zone_id" {
-  value       = aws_cloudfront_distribution.this.hosted_zone_id
+  value       = one(aws_cloudfront_distribution.this[*].hosted_zone_id)
   description = "Route 53 Zone ID for the CloudFront Distribution"
 }
 
