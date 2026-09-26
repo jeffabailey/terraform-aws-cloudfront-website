@@ -1,3 +1,20 @@
+## 0.11.0
+
+### Added
+
+- `activitypub_host` (string, default `null`). When set, `/.well-known/webfinger`,
+  `/.well-known/host-meta` and `/.well-known/nodeinfo` answer a 301 to
+  `https://<activitypub_host>` with the path and query string preserved, so an
+  ActivityPub server on another host can issue `@user@<domain_name>` handles.
+  The query string is rebuilt the way the redirect table does it; losing it is
+  what made the Bridgy Fed rule removed in 0.7.0 unable to name an account.
+  Cached for an hour. The paths join the module-owned `/.well-known/` set.
+
+  Default `null`, so no existing consumer changes: the empty-list golden render
+  is untouched.
+
+- `tests/activitypub.tftest.hcl`.
+
 ## 0.10.0
 
 ### Added

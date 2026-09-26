@@ -104,6 +104,7 @@ Then, fetch the module from the [Terraform Registry](https://registry.terraform.
 | redirects | Edge 301 redirects, rendered into the viewer-request function as an exact-match lookup table. See [Edge redirects](#edge-redirects). | `list(object({ from = string, to = string }))` | `[]` |
 | redirect_function_name | Name of the viewer-request CloudFront Function. Unique per AWS account. Null derives `<domain>-redirect`. | `string` | `null` |
 | canonical_trailing_slash | 301 a directory URL without a trailing slash to the slashed form, instead of the origin's 302. | `bool` | `false` |
+| activitypub_host | Hostname of an ActivityPub server whose handles use this domain (`@user@<domain_name>`). 301s `/.well-known/{webfinger,host-meta,nodeinfo}` there, query string preserved. See [ActivityPub handle](#activitypub-handle). | `string` | `null` |
 | bsky_oembed_function_name | Name of the Bluesky oEmbed CloudFront Function. Null derives `<domain>-bsky-oembed`. | `string` | `null` |
 
 #### Response-headers policy (ADR-MCEJU-003)
@@ -210,6 +211,24 @@ x-cache: FunctionGeneratedResponse from cloudfront
 ```
 
 Check the slash-less and `/index.html` spellings and one query string too, then confirm `tofu plan` reports no changes.
+
+### ActivityPub handle
+
+Set `activitypub_host` to give an ActivityPub server's accounts this site's domain as their handle while the server runs on another host. It is the fediverse counterpart of `atproto_did`, and both can be set at once.
+
+```hcl
+activitypub_host = "gotosocial.example.com" # handles become @user@example.com
+```
+
+The viewer-request function answers exactly `/.well-known/webfinger`, `/.well-known/host-meta` and `/.well-known/nodeinfo` with a 301 to `https://<activitypub_host>` plus the original path and query string. The query string is required: a webfinger lookup is `?resource=acct:user@domain`, and a Location without it cannot name an account. The response caches for an hour, so moving the server is not pinned in resolvers for a year. Nothing else under `/.well-known/` moves.
+
+The server must be configured for the split: GoToSocial calls it `account-domain` (with `host` set to `activitypub_host`), Mastodon calls it `LOCAL_DOMAIN`/`WEB_DOMAIN`. Deploy the redirect **before** the server creates its first account, because the account domain cannot change after that.
+
+```sh
+$ curl -sI 'https://example.com/.well-known/webfinger?resource=acct:user@example.com'
+HTTP/2 301
+location: https://gotosocial.example.com/.well-known/webfinger?resource=acct:user@example.com
+```
 
 ### Outputs
 

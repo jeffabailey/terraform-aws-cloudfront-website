@@ -77,7 +77,16 @@ locals {
   # claim. `/.well-known/` is reserved for identity and discovery whether or not
   # the module answers a path under it today (ADR-020).
   redirect_reserved_prefixes = ["/.well-known/", trimsuffix(var.bsky_oembed_path_pattern, "*")]
-  redirect_module_paths      = var.atproto_did == null ? [] : ["/.well-known/atproto-did"]
+  redirect_module_paths = concat(
+    var.atproto_did == null ? [] : ["/.well-known/atproto-did"],
+    var.activitypub_host == null ? [] : local.activitypub_paths,
+  )
+
+  # Discovery paths an ActivityPub server needs when its handles use this
+  # domain but it is served from another host. Webfinger resolves @user@domain
+  # to an actor; host-meta and nodeinfo tell clients and crawlers which server
+  # actually answers. Exact matches only: nothing else under /.well-known/ moves.
+  activitypub_paths = ["/.well-known/webfinger", "/.well-known/host-meta", "/.well-known/nodeinfo"]
 
   # N(p): drop a trailing "/index.html", else one trailing "/". Applied to the
   # table keys here and to request.uri at the edge, so all three spellings of an
@@ -219,6 +228,40 @@ EOT
 
   trailing_slash_block = var.canonical_trailing_slash ? local.trailing_slash_code : ""
 
+  # ActivityPub discovery hand-off. The query string MUST survive: a webfinger
+  # lookup is /.well-known/webfinger?resource=acct:user@domain, and a Location
+  # without it cannot name an account. That is exactly how the Bridgy Fed rule
+  # removed in 0.7.0 failed. The cache is an hour, not a year, so a moved
+  # server is not pinned in resolvers' caches.
+  activitypub_code = <<EOT
+      if (${jsonencode(local.activitypub_paths)}.indexOf(uri) !== -1) {
+        var aq = request.querystring;
+        var aqs = "";
+        var an, ai, am;
+        for (an in aq) {
+          am = aq[an].multiValue;
+          if (am) {
+            for (ai = 0; ai < am.length; ai++) {
+              aqs += (aqs ? "&" : "?") + an + (am[ai].value ? "=" + am[ai].value : "");
+            }
+          } else {
+            aqs += (aqs ? "&" : "?") + an + (aq[an].value ? "=" + aq[an].value : "");
+          }
+        }
+        return {
+          statusCode: 301,
+          statusDescription: "Moved Permanently",
+          headers: {
+            "location": { value: "https://${coalesce(var.activitypub_host, "unset.invalid")}" + uri + aqs },
+            "cache-control": { value: "max-age=3600" },
+            "access-control-allow-origin": { value: "*" }
+          }
+        };
+      }
+EOT
+
+  activitypub_block = var.activitypub_host == null ? "" : local.activitypub_code
+
   redirect_function_code = <<-EOT
     function handler(event) {
       var request = event.request;
@@ -235,7 +278,7 @@ EOT
         };
       }
 %{endif}
-${local.redirect_block}${local.trailing_slash_block}      return request;
+${local.activitypub_block}${local.redirect_block}${local.trailing_slash_block}      return request;
     }
   EOT
 

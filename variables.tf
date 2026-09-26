@@ -158,6 +158,23 @@ variable "atproto_did" {
   default     = null
 }
 
+variable "activitypub_host" {
+  type        = string
+  description = <<-EOT
+    Hostname of an ActivityPub server (e.g. GoToSocial) whose accounts use this
+    site's domain in their handles (@user@<domain_name>) while the server runs
+    elsewhere. When set, /.well-known/webfinger, /.well-known/host-meta and
+    /.well-known/nodeinfo answer a 301 to https://<activitypub_host> with the
+    path and query string preserved. Null (the default) renders nothing.
+  EOT
+  default     = null
+
+  validation {
+    condition     = var.activitypub_host == null || can(regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$", var.activitypub_host))
+    error_message = "activitypub_host must be a bare lowercase hostname: no scheme, port, path, or trailing dot."
+  }
+}
+
 # -----------------------------------------------------------------------------
 # Edge redirects (ADR-016, ADR-017, ADR-018, ADR-019, ADR-021)
 #
